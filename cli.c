@@ -18,6 +18,8 @@
 #define LINUX_MAKE_ADDRUN_ERROR -3
 #define NO_LINUX_MAKE_ADDRUN_ERROR -4
 
+int socket_local_client_connect(int fd, const char *name, int namespaceId, int type);
+int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_un *p_addr, socklen_t *socklen);
 int socket_local_client(const char *name, int namespaceId, int type)
 {
     int socketID;
@@ -70,88 +72,82 @@ int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_u
     return NO_ERR;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
     int client_fd;
     char buffer[BUFFER_SIZE];
 
     client_fd = socket_local_client("cmd_skt", ANDROID_SOCKET_NAMESPACE_ABSTRACT, SOCK_STREAM);
-    if (client_fd < 0)
-    {
+    if (client_fd < 0) {
         perror("socket creation failed");
         return EXIT_FAILURE;
     }
 
-    struct timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    if (setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
-    {
-        perror("setsockopt failed");
-        exit(EXIT_FAILURE);
+    /* -c <command>: send once, print response, exit */
+    if (argc >= 3 && strcmp(argv[1], "-c") == 0) {
+        memset(buffer, 0, BUFFER_SIZE);
+        for (int i = 2; i < argc; i++) {
+            strncat(buffer, argv[i], BUFFER_SIZE - strlen(buffer) - 1);
+            if (i < argc - 1)
+                strncat(buffer, " ", BUFFER_SIZE - strlen(buffer) - 1);
+        }
+
+        if (write(client_fd, buffer, strlen(buffer)) < 0) {
+            perror("write failed");
+            close(client_fd);
+            return EXIT_FAILURE;
+        }
+
+        memset(buffer, 0, BUFFER_SIZE);
+        ssize_t n = read(client_fd, buffer, BUFFER_SIZE - 1);
+        if (n < 0) {
+            perror("read failed");
+            close(client_fd);
+            return EXIT_FAILURE;
+        }
+        buffer[n] = '\0';
+        printf("%s\n", buffer);
+        fflush(stdout);
+
+        close(client_fd);
+        return EXIT_SUCCESS;
     }
 
+    /* interactive mode */
     printf("Connected to the server.\n");
     fflush(stdout);
 
-    FILE *ret_f = fopen(RET_FILE, "w");
-    if (ret_f == NULL)
-    {
-        perror("create RET_FILE failed");
-        exit(EXIT_FAILURE);
-    }
-    fclose(ret_f);
-
-    while (1)
-    {
-        printf("Enter command (type 'exit' to quit):\n");
+    while (1) {
+        printf("Enter a command (type 'exit' to quit): ");
         fflush(stdout);
-        if (fgets(buffer, 256, stdin) == NULL)
-        {
-            perror("Error reading input.\n");
-            break;
-        }
-
-        buffer[strcspn(buffer, "\n")] = 0;
-
-        if (strcmp(buffer, "exit") == 0)
-        {
-            printf("Exiting client.\n");
+        memset(buffer, 0, BUFFER_SIZE);
+        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
+            printf("Error reading input.\n");
             fflush(stdout);
             break;
         }
-
-        if (write(client_fd, buffer, strlen(buffer)) < 0)
-        {
+        buffer[strcspn(buffer, "\n")] = 0;
+        if (strcmp(buffer, "exit") == 0) {
+            printf("Exiting.\n");
+            fflush(stdout);
+            break;
+        }
+        if (write(client_fd, buffer, strlen(buffer)) < 0) {
             perror("write failed");
             break;
         }
-
-        int ret_fd = open(RET_FILE, O_WRONLY | O_TRUNC);
-        if (ret_fd < 0)
-        {
-            exit(EXIT_FAILURE);
+        memset(buffer, 0, BUFFER_SIZE);
+        if (read(client_fd, buffer, BUFFER_SIZE - 1) < 0) {
+            perror("read failed");
+            break;
         }
-
-        printf("Server response:\n");
+        printf("Server response: %s\n", buffer);
         fflush(stdout);
-        ssize_t recv_bytes;
-        while ((recv_bytes = read(client_fd, buffer, BUFFER_SIZE)) > 0)
-        {
-            fwrite(buffer, 1, recv_bytes, stdout);
-            printf("\n");
-            fflush(stdout);
-            if (write(ret_fd, buffer, recv_bytes) != recv_bytes)
-            {
-                close(ret_fd);
-                exit(EXIT_FAILURE);
-            }
-        }
-        close(ret_fd);
     }
 
-    shutdown(client_fd, SHUT_WR);
-    close(client_fd);
-    client_fd = -1;
+    if (close(client_fd) < 0) {
+        perror("close client failed");
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }
