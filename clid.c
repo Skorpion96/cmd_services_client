@@ -22,8 +22,6 @@
 #define LINUX_MAKE_ADDRUN_ERROR -3
 #define NO_LINUX_MAKE_ADDRUN_ERROR -4
 
-int socket_local_client_connect(int fd, const char *name, int namespaceId, int type);
-int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_un *p_addr, socklen_t *socklen);
 int socket_local_client(const char *name, int namespaceId, int type)
 {
     int socketID;
@@ -268,13 +266,8 @@ int main(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        fprintf(stderr,
-            "Usage: %s <command> [args...]\n"
-            "       %s -c \"<command string>\"\n"
-            "       %s start-server\n"
-            "       %s kill-server\n",
-            argv[0], argv[0], argv[0], argv[0]);
-        return 1;
+        fprintf(stderr, "Invalid command\n");
+        return;
     }
     pid_t g_pid = -1;
     if (strcmp(argv[1], "start-server") == 0)
@@ -300,58 +293,29 @@ int main(int argc, char *argv[])
             start_daemon();
             printf("New daemon started.\n");
         }
-
         char buffer[BUFFER_SIZE];
         size_t buffer_len = 0;
-        int com_fd, ret_fd;
-
-        /* -c <cmd>: treat the single following argument as the full command string */
-        if (strcmp(argv[1], "-c") == 0)
+        int i, com_fd, ret_fd;
+        for (i = 1; i < argc; i++)
         {
-            if (argc < 3)
+            size_t len = strlen(argv[i]);
+            if (buffer_len + len + 1 < 256)
             {
-                fprintf(stderr, "Usage: %s -c <command>\n", argv[0]);
-                return 1;
-            }
-            size_t len = strlen(argv[2]);
-            if (len + 2 > BUFFER_SIZE) /* +2 for '\n' and '\0' */
-            {
-                fprintf(stderr, "Command string too long.\n");
-                return 1;
-            }
-            memcpy(buffer, argv[2], len);
-            buffer[len]     = '\n';
-            buffer[len + 1] = '\0';
-            buffer_len      = len + 1;
-        }
-        else
-        {
-            /* original behaviour: join all argv tokens with spaces */
-            int i;
-            for (i = 1; i < argc; i++)
-            {
-                size_t len = strlen(argv[i]);
-                if (buffer_len + len + 1 < 256)
+                strcpy(buffer + buffer_len, argv[i]);
+                buffer_len += len;
+                if (i < argc - 1)
                 {
-                    strcpy(buffer + buffer_len, argv[i]);
-                    buffer_len += len;
-                    if (i < argc - 1)
-                    {
-                        buffer[buffer_len++] = ' ';
-                    }
-                    else
-                    {
-                        buffer[buffer_len++] = '\n';
-                    }
+                    buffer[buffer_len++] = ' ';
                 }
                 else
-                {
-                    fprintf(stderr, "Buffer size exceeded.\n");
-                    return 1;
-                }
+                    buffer[buffer_len++] = '\n';
+            }
+            else
+            {
+                fprintf(stderr, "Buffer size exceeded.\n");
+                return;
             }
         }
-
         ret_fd = open(RET_FILE, O_WRONLY | O_TRUNC);
         if (ret_fd < 0)
         {
