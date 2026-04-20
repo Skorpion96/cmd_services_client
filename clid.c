@@ -6,7 +6,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
-#define BASE_PATH "/sdcard/Download/"
+#define BASE_PATH "/sdcard/Android/media/.cmd"
 #define PID_FILE_NAME "daemon_pid"
 #define COM_FILE_NAME "command"
 #define RET_FILE_NAME "result"
