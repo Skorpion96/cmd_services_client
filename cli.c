@@ -6,7 +6,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
-#define BASE_PATH "/sdcard/Download"
+#define BASE_PATH "/sdcard/Download/"
 #define RET_FILE_NAME "result"
 
 #define RET_FILE BASE_PATH RET_FILE_NAME
