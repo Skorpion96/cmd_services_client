@@ -6,7 +6,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
-#define BASE_PATH "/sdcard/Android/media/.cmd"
+#define BASE_PATH "/sdcard/Android/media/.clid"
 #define PID_FILE_NAME "daemon_pid"
 #define COM_FILE_NAME "command"
 #define RET_FILE_NAME "result"
@@ -22,6 +22,8 @@
 #define LINUX_MAKE_ADDRUN_ERROR -3
 #define NO_LINUX_MAKE_ADDRUN_ERROR -4
 
+int socket_local_client_connect(int fd, const char *name, int namespaceId, int type);
+int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_un *p_addr, socklen_t *socklen);
 int socket_local_client(const char *name, int namespaceId, int type)
 {
     int socketID;
@@ -267,7 +269,7 @@ int main(int argc, char *argv[])
     if (argc < 2)
     {
         fprintf(stderr, "Invalid command\n");
-        return;
+        return 0;
     }
     pid_t g_pid = -1;
     if (strcmp(argv[1], "start-server") == 0)
@@ -313,7 +315,7 @@ int main(int argc, char *argv[])
             else
             {
                 fprintf(stderr, "Buffer size exceeded.\n");
-                return;
+                return 0;
             }
         }
         ret_fd = open(RET_FILE, O_WRONLY | O_TRUNC);
