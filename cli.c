@@ -6,9 +6,23 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+/* On Android this comes from <sys/system_properties.h>.
+   On Linux/x86 we stub it out so the code compiles cleanly. */
+#ifdef __ANDROID__
+#  include <sys/system_properties.h>
+#else
+static inline int __system_property_set(const char *name, const char *value)
+{
+    /* stub: on device this will be the real libc symbol */
+    (void)name; (void)value;
+    fprintf(stderr, "[stub] setprop %s = %s\n", name, value);
+    return 0;
+}
+#endif
+
 #define BASE_PATH "/sdcard/Download/"
 #define RET_FILE_NAME "result"
-
 #define RET_FILE BASE_PATH RET_FILE_NAME
 #define BUFFER_SIZE 4096
 #define ANDROID_SOCKET_NAMESPACE_ABSTRACT 0
@@ -16,22 +30,19 @@
 #define CREATE_ERR -1
 #define CONNECT_ERR -2
 #define LINUX_MAKE_ADDRUN_ERROR -3
-#define NO_LINUX_MAKE_ADDRUN_ERROR -4
 
+/* Forward declarations */
 int socket_local_client_connect(int fd, const char *name, int namespaceId, int type);
 int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_un *p_addr, socklen_t *socklen);
+
 int socket_local_client(const char *name, int namespaceId, int type)
 {
-    int socketID;
-    int ret;
-    socketID = socket(AF_LOCAL, type, 0);
+    int socketID = socket(AF_LOCAL, type, 0);
     if (socketID < 0)
-    {
         return CREATE_ERR;
-    }
-    ret = socket_local_client_connect(socketID, name, namespaceId, type);
-    if (ret < 0)
-    {
+
+    int ret = socket_local_client_connect(socketID, name, namespaceId, type);
+    if (ret < 0) {
         close(socketID);
         return ret;
     }
@@ -42,29 +53,25 @@ int socket_local_client_connect(int fd, const char *name, int namespaceId, int t
 {
     struct sockaddr_un addr;
     socklen_t socklen;
-    size_t namelen;
-    int ret;
-    ret = socket_make_sockaddr_un(name, namespaceId, &addr, &socklen);
+
+    int ret = socket_make_sockaddr_un(name, namespaceId, &addr, &socklen);
     if (ret < 0)
-    {
         return ret;
-    }
+
     if (connect(fd, (struct sockaddr *)&addr, socklen) < 0)
-    {
         return CONNECT_ERR;
-    }
+
     return fd;
 }
 
 int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_un *p_addr, socklen_t *socklen)
 {
-    size_t namelen;
     memset(p_addr, 0, sizeof(*p_addr));
-    namelen = strlen(name);
+    size_t namelen = strlen(name);
+
     if ((namelen + 1) > sizeof(p_addr->sun_path))
-    {
         return LINUX_MAKE_ADDRUN_ERROR;
-    }
+
     p_addr->sun_path[0] = 0;
     memcpy(p_addr->sun_path + 1, name, namelen);
     p_addr->sun_family = AF_LOCAL;
@@ -74,6 +81,13 @@ int socket_make_sockaddr_un(const char *name, int namespaceId, struct sockaddr_u
 
 int main(int argc, char *argv[])
 {
+    /* Enable the command service before anything else */
+    if (__system_property_set("persist.sys.cmdservice.enable", "enable") != 0) {
+        fprintf(stderr, "setprop failed — run this from com.sprd.engineermode context\n");
+        return EXIT_FAILURE;
+    }
+    usleep(500000); /* give the service time to bring up the socket */
+
     int client_fd;
     char buffer[BUFFER_SIZE];
 
@@ -113,7 +127,7 @@ int main(int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 
-    /* interactive mode */
+    /* Interactive mode */
     printf("Connected to the server.\n");
     fflush(stdout);
 
@@ -121,21 +135,25 @@ int main(int argc, char *argv[])
         printf("Enter a command (type 'exit' to quit): ");
         fflush(stdout);
         memset(buffer, 0, BUFFER_SIZE);
+
         if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
             printf("Error reading input.\n");
             fflush(stdout);
             break;
         }
         buffer[strcspn(buffer, "\n")] = 0;
+
         if (strcmp(buffer, "exit") == 0) {
             printf("Exiting.\n");
             fflush(stdout);
             break;
         }
+
         if (write(client_fd, buffer, strlen(buffer)) < 0) {
             perror("write failed");
             break;
         }
+
         memset(buffer, 0, BUFFER_SIZE);
         if (read(client_fd, buffer, BUFFER_SIZE - 1) < 0) {
             perror("read failed");
