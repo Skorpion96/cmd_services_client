@@ -6,6 +6,21 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+/* On Android this comes from <sys/system_properties.h>.
+   On Linux/x86 we stub it out so the code compiles cleanly. */
+#ifdef __ANDROID__
+#  include <sys/system_properties.h>
+#else
+static inline int __system_property_set(const char *name, const char *value)
+{
+    /* stub: on device this will be the real libc symbol */
+    (void)name; (void)value;
+    fprintf(stderr, "[stub] setprop %s = %s\n", name, value);
+    return 0;
+}
+#endif
+
 #define BASE_PATH "/sdcard/Android/media/"
 #define PID_FILE_NAME "daemon_pid"
 #define COM_FILE_NAME "command"
@@ -179,7 +194,7 @@ void start_daemon()
     client_fd = socket_local_client("cmd_skt", ANDROID_SOCKET_NAMESPACE_ABSTRACT, SOCK_STREAM);
     if (client_fd < 0)
     {
-        perror("[CHILD] socket creation failed");
+        /* perror("[CHILD] socket creation failed"); */
         exit(EXIT_FAILURE);
     }
 
@@ -281,6 +296,12 @@ int main(int argc, char *argv[])
         else
         {
             printf("Starting new daemon...\n");
+    /* Enable the command service before anything else */
+    if (__system_property_set("persist.sys.cmdservice.enable", "enable") != 0) {
+        fprintf(stderr, "setprop failed — run this from com.sprd.engineermode context\n");
+        return EXIT_FAILURE;
+    }
+    usleep(500000); /* give the service time to bring up the socket */
             init_file();
             start_daemon();
         }
